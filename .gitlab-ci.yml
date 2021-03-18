@@ -1,0 +1,158 @@
+# 參數
+variables:
+  OPENSHIFT_SERVER: "https://okd3b.ecloud-qa.cht.com.tw:8443"
+  OPENSHIFT_LOGIN_USERNAME: "857099"
+  OPENSHIFT_LOGIN_PASSWORD: "1qaz@WSX3edc"
+  NEXUS_SERVER: "http://nexus-chtapp-gitlab.ecloud-qa.cht.com.tw/repository/nuget-hosted/"
+  REGISTER: "registry.ecloud-qa.cht.com.tw:5000"
+  URL_IMAGE: "$REGISTER/app/$CI_PROJECT_NAME"
+  OPENSHIFT_TEST_PROJECT: "chtapp-gitlab"
+  OPENSHIFT_RELEASE_PROJECT: "chtapp"
+  APPNAME: "cmmpush"
+
+
+# 設定工作階段
+stages:
+  - 線上編譯
+  - 白箱掃描
+  - 包裝Docker
+  - 佈署
+
+
+# 檔案暫存
+cache:
+  key: $CI_PROJECT_ID
+  paths:
+  - ./src/MonitorService/bin/Release/netcoreapp3.1/rhel.7-x64/publish/
+
+## 任務 ##
+編譯:
+  stage: 線上編譯
+  image: $REGISTER/app/microsoft/dotnet:3.1-sdk
+  script:
+    - cd src/MonitorService
+    - cp appsettings_gitlab.json appsettings.json
+    - dotnet --info
+    - dotnet restore -r rhel.7-x64 -s $NEXUS_SERVER
+    - dotnet publish --no-restore -f netcoreapp3.1 -c Release -r rhel.7-x64
+    - echo "CI_COMMIT_TAG:$CI_PROJECT_NAME-$CI_COMMIT_TAG / CI_COMMIT_SHA:$CI_COMMIT_SHA" > bin/Release/netcoreapp3.1/rhel.7-x64/publish/wwwroot/info.txt
+  #會把裡面編譯或程式的產出物存放起來，提供介面給其他需要的人使用
+  artifacts:
+    paths:
+      - src/MonitorService/bin/Release/netcoreapp3.1/rhel.7-x64/publish/
+
+
+Fortify掃描:
+  stage: 白箱掃描
+  image: $REGISTER/app/python
+  allow_failure: true
+  only:
+    - /^(\d+)?(v|-)?(\d+)$/  
+  script:
+    - URL_ARG="name=$CI_PROJECT_NAME&version=$CI_COMMIT_TAG&time=1&gitPath=$CI_REPOSITORY_URL"
+    - echo $URL_ARG > url_arg.txt
+    # 呼叫Fortify
+    - curl "http://10.194.21.201:8080/api/execFortify?$URL_ARG" > detail.json
+    - python3 -c "import sys, json; from pprint import pprint; json_file = open('detail.json', 'r'); result = json.load(json_file);  pprint(result); "
+    
+    # fetch id value and save to result.txt
+    - curl "http://10.194.21.201:8080/api/getFortifyReport?$URL_ARG" | python3 -c "import sys, json; result=json.load(sys.stdin)['Result']; print(result); " > result.txt
+    
+    # read result.txt to variable result
+    - result=`cat result.txt`
+    - echo $result
+    
+    # 測試是否回傳正確
+    - if [ $result != 1 ] ; then  exit 1; fi
+    
+    # 下載pdf報告
+    - curl "http://10.194.21.201:8080/api/Download?$URL_ARG" > report.pdf
+  artifacts:
+    when: always
+    paths:
+    - url_arg.txt
+    - detail.json
+    - result.txt
+    - report.pdf
+
+
+Fortify報告回傳commit:
+  stage: 白箱掃描
+  image: $REGISTER/app/python
+  only:
+    - tags
+  script:
+    - URL_ARG="name=$CI_PROJECT_NAME&version=$CI_COMMIT_TAG&time=1&gitlabUrl=http://chtapp-gitlab&porjectId=$CI_PROJECT_ID&comit_sha=$CI_COMMIT_SHA&assess_token=toTcjsZA2oLJWgQcEU6i"
+    - echo $URL_ARG > url_arg.txt
+    
+    # 呼叫Fortify
+    - curl "http://10.194.21.201:8080/api/UploadFileAndComment?$URL_ARG" > detail.json || true
+    
+    # read result.txt to variable result
+    - result=`cat detail.json`
+    - echo $result
+    
+    # 判斷是否成功
+    - python3 -c "import sys, json; from pprint import pprint; json_file = open('detail.json', 'r'); result = json.load(json_file);  print('note' in result); " > result.txt 
+    - if [ $result != 'True' ] ; then  exit 1; fi    
+  #手動執行此步驟
+  when: manual
+  artifacts:
+    when: always
+    paths:
+    - url_arg.txt
+    - detail.json
+
+
+包裝:
+  stage: 包裝Docker
+  image: $REGISTER/app/docker:stable
+  only:
+    - tags
+  services:
+    - $REGISTER/app/docker:dind  
+  script:
+    - docker build -t $CI_PROJECT_NAME ./src/MonitorService
+    - docker tag $CI_PROJECT_NAME $URL_IMAGE:$CI_COMMIT_TAG
+    - docker push $URL_IMAGE:$CI_COMMIT_TAG
+
+  
+佈署:
+  image: $REGISTER/app/widerin/openshift-cli:v3.6
+  stage: 佈署
+  only:
+    - tags
+  script:
+    #登入
+    - oc login "$OPENSHIFT_SERVER" -u="$OPENSHIFT_LOGIN_USERNAME" -p="$OPENSHIFT_LOGIN_PASSWORD" --insecure-skip-tls-verify
+    #顯示資訊
+    - oc version
+    #進入專案
+    - oc project $OPENSHIFT_TEST_PROJECT
+    #更新image
+    #- oc import-image $SAMPLE_TEST_IMAGE
+    #建立新服務版本
+    - oc new-app app-versioned-service-without-configmap -p APP_NAME=$APPNAME-$CI_COMMIT_TAG -p IMAGE_NAME=$CI_PROJECT_NAME -p IMAGE_TAG=$CI_COMMIT_TAG
+    
+    
+
+  
+切換:
+  image: $REGISTER/app/widerin/openshift-cli:v3.6
+  stage: 佈署
+  only:
+    - tags
+  script:
+    #登入
+    - oc login "$OPENSHIFT_SERVER" -u="$OPENSHIFT_LOGIN_USERNAME" -p="$OPENSHIFT_LOGIN_PASSWORD" --insecure-skip-tls-verify
+    #進入專案
+    - oc project $OPENSHIFT_TEST_PROJECT
+    #將router(api)指向服務sample
+    - oc patch route/cmmpush-api -p "{\"spec\":{\"to\":{\"name\":\"$APPNAME-$CI_COMMIT_TAG\"}}}"
+  #手動執行此步驟
+  when: manual
+  
+  
+  
+
+
