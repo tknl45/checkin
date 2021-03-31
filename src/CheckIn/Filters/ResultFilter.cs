@@ -18,14 +18,15 @@ namespace CheckIn.Filters
 
             var result = new
             {
-                Result = controller.Result,
+                Result = controller.Result,                
+
+                // 取得由 API 返回的處理訊息
+                Message = controller.Message,
 
                 // 取得由 API 返回的資料
                 //result.Data = actionExecutedContext.ActionContext.Response.Content.ReadAsAsync<object>().Result;
                 Data = controller.Data,
 
-                // 取得由 API 返回的處理訊息
-                Message = controller.Message
             };
 
            
@@ -50,11 +51,11 @@ namespace CheckIn.Filters
                 // 取得由 API 返回的 Result Code               
                 Result = controller.Result,
 
+                // 取得由 API 返回的處理訊息
+                Message = controller.Message,
+
                 // 取得由 API 返回的資料                
                 Data = controller.Data,
-
-                // 取得由 API 返回的處理訊息
-                Message = controller.Message
             };
 
 

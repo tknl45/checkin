@@ -1,6 +1,6 @@
 using System;
 
-namespace CheckIn.Modles
+namespace CheckIn.Models
 {
     /// <summary>
     /// Mongo 查詢

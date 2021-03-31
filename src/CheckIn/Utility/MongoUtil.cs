@@ -50,6 +50,10 @@ namespace CheckIn.Utility
 			return new MongoUtil();
 		}
 
+        public IMongoDatabase getDB(){
+            return _db;
+        }
+
         /// <summary>
         /// Return the number of milliseconds since 1970/01/01
         /// </summary>

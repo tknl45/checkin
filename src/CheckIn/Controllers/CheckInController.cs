@@ -3,7 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
-using CheckIn.Modles;
+using CheckIn.DAO;
+using CheckIn.Models;
 using CheckIn.Utility;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -20,36 +21,53 @@ namespace CheckIn.Controllers
         /// <summary>
         /// checkIn
         /// </summary>
-        /// <param name="act_id">活動id</param>
-        /// <param name="user_id">使用者id</param>
+        /// <param name="actId">活動id</param>
+        /// <param name="userId">使用者id</param>
         /// <returns></returns>
         [Route("checkIn")]
         [HttpGet]
-        public void checkIn(string act_id, string user_id)
+        public void checkIn(string actId, string userId)
         {
-            // Check if the user has checked in
+            var act = ActDAO.getInstance().getAct(actId);
 
-            // Get how many days the user has checked in.
+            if(act == null){
+                this.Fail("無此活動");
+                return;
+            }
+
+
+            var today = DateTime.UtcNow.AddHours(8).ToString("yyyy-MM-dd"); //轉成UTC+8
+            // Check if the user has checked in
+            var isCheckIn = CheckInDAO.getInstance().isCheckIn(actId, userId, today);
+
+            if(!isCheckIn){
+                //簽到
+                CheckInDAO.getInstance().CheckIn(actId, userId, today);
+                this.Message = "今日簽到完畢";
+            }else{
+                this.Message = "今日已簽到";
+            }
             
-            // Response the successfully checked in message.
+            showCheckIn(actId, userId);
         }
 
 
         /// <summary>
         /// showCheckIn
         /// </summary>
-        /// <param name="act_id">活動id</param>
-        /// <param name="user_id">使用者id</param>
+        /// <param name="actId">活動id</param>
+        /// <param name="userId">使用者id</param>
         /// <returns></returns>
         [Route("showCheckIn")]
         [HttpGet]
-        public void showCheckIn(string act_id, string user_id)
+        public void showCheckIn(string actId, string userId)
         {
-            // Get the Day and check_or_not information from check_ins table with designated user_id.
-            
             // Get how many days the user has checked in.
-            
-            // Response the successfully checked in message.
+            var list = CheckInDAO.getInstance().queryCheckIn(actId, userId);
+
+
+            // Response the successfully checked in message.        
+            this.Data = list;
         }
 
 
@@ -59,14 +77,17 @@ namespace CheckIn.Controllers
         /// <returns></returns>
         [Route("showActs")]
         [HttpGet]
-        public void showActs()
+        public void showActs(DateTime? day)
         {
-            // Get the Day and check_or_not information from check_ins table with designated user_id.
-            
-            // Get how many days the user has checked in.
-            
-            // Response the successfully checked in message.
+            var chooseDay = DateTime.Now;
+            if(day != null){
+                chooseDay = (DateTime)day;
+            }
+
+            this.Data = ActDAO.getInstance().showActs(chooseDay);
         }
+
+     
 
 
 
@@ -76,13 +97,22 @@ namespace CheckIn.Controllers
         /// <summary>
         /// ifUserCheckInToday
         /// </summary>
-        /// <param name="act_id">活動id</param>
-        /// <param name="user_id">使用者id</param>
+        /// <param name="actId">活動id</param>
+        /// <param name="userId">使用者id</param>
         /// <returns></returns>
         [Route("ifUserCheckInToday")]
         [HttpGet]
-        public void ifUserCheckInToday(string act_id, string user_id)
+        public void ifUserCheckInToday(string actId, string userId)
         {
+            var today = DateTime.UtcNow.AddHours(8).ToString("yyyy-MM-dd"); //轉成UTC+8
+            // Check if the user has checked in
+            var isCheckIn = CheckInDAO.getInstance().isCheckIn(actId, userId, today);
+
+            if(isCheckIn){
+                this.Ok("已簽到", isCheckIn);
+            }else{
+                this.Ok("未簽到", isCheckIn);
+            }
 
         }
 
