@@ -19,7 +19,7 @@ namespace CheckIn.Controllers
     {
        
         /// <summary>
-        /// checkIn
+        /// 輸入活動id與使用者id做本日簽到
         /// </summary>
         /// <param name="actId">活動id</param>
         /// <param name="userId">使用者id</param>
@@ -53,7 +53,7 @@ namespace CheckIn.Controllers
 
 
         /// <summary>
-        /// showCheckIn
+        /// 輸入活動id與使用者id顯示簽到列表
         /// </summary>
         /// <param name="actId">活動id</param>
         /// <param name="userId">使用者id</param>
@@ -72,7 +72,7 @@ namespace CheckIn.Controllers
 
 
         /// <summary>
-        /// showActs
+        /// 顯示目前開啟中在的活動資訊列表
         /// </summary>
         /// <returns></returns>
         [Route("showActs")]
@@ -95,7 +95,7 @@ namespace CheckIn.Controllers
 
 
         /// <summary>
-        /// ifUserCheckInToday
+        /// 顯示今日是否已簽到
         /// </summary>
         /// <param name="actId">活動id</param>
         /// <param name="userId">使用者id</param>
@@ -117,15 +117,49 @@ namespace CheckIn.Controllers
         }
 
          /// <summary>
-        /// getDateAndCheckOrNotInformation
+        /// 輸入活動id與使用者id完整活動簽到成功失敗列表
         /// </summary>
-        /// <param name="act_id">活動id</param>
-        /// <param name="user_id">使用者id</param>
+        /// <param name="actId">活動id</param>
+        /// <param name="userId">使用者id</param>
         /// <returns></returns>
         [Route("getDateAndCheckOrNotInformation")]
         [HttpGet]
-        public void getDateAndCheckOrNotInformation(string act_id, string user_id){
+        public void getDateAndCheckOrNotInformation(string actId, string userId){
+            
+            var list = new List<CheckInDataBase>();
             var howManyDaysTheUserHasCheckedInConsecutivelyUntilToday = 0;
+            var act = ActDAO.getInstance().getAct(actId);
+
+            if(act == null){
+                this.Fail("無此活動");
+                return;
+            }
+            var ok_list = CheckInDAO.getInstance().queryCheckIn(actId, userId);
+
+            var pointDate = (DateTime)act.startTime;
+            while(pointDate < act.endTime){
+                var data = new CheckInDataBase();
+                var day = pointDate.ToUniversalTime().AddHours(8).ToString("yyyy-MM-dd"); //轉成UTC+8
+                var findArr = ok_list.Where<CheckInData>(e => e.checkIn_data == day);
+                if(findArr.Count() != 0){
+                    data = findArr.ToList<CheckInData>()[0];
+                    howManyDaysTheUserHasCheckedInConsecutivelyUntilToday++;
+                }else{
+                    data.checkIn_data = day;     
+                    data.check_or_not = false;               
+                }
+
+                list.Add(data);
+
+                pointDate = pointDate.AddDays(1);
+            }
+
+            var result = new Dictionary<String, Object>();
+            result["howManyDaysTheUserHasCheckedInConsecutivelyUntilToday"] = howManyDaysTheUserHasCheckedInConsecutivelyUntilToday;
+            result["detail"] = list;
+
+            Ok("查詢成功",result);
+
 
         }
 
